@@ -1,4 +1,4 @@
-#include "background_service.hpp"
+#include "background_application.hpp"
 
 #include <functional>
 #include <vector>
@@ -12,8 +12,8 @@
 #include <QtCore/QLoggingCategory>
 
 #include "background_datatypes.hpp"
-#include "background_application_controller.hpp"
-#include "background_application_controller_qt.hpp"
+#include "background_event_loop_controller.hpp"
+#include "background_event_loop_controller_qt.hpp"
 #include "background_service_platform.hpp"
 #include "background_console_platform.hpp"
 
@@ -29,7 +29,7 @@ enum class starting_sequence
 
     set_up_service_platform,
     start_service_platform,
-    retrieve_configuration,
+    retrieve_service_configuration,
     start_serving_1,
     set_service_state_serving,
 
@@ -83,23 +83,23 @@ enum class proceed_result
     destroyed
 };
 
-class service_implementation
+class application_implementation
 {
     public :
-    explicit service_implementation (service * service);
+    explicit application_implementation (application * application);
 
     protected :
     serving_state state;
     std::optional<bool> running_as_service;
-    std::optional<service_configuration> configuration;
-    std::optional<service_error> error;
-    std::optional<service_error> error_;
+    std::optional<service_configuration> service_configuration;
+    std::optional<application_error> error;
+    std::optional<application_error> error_;
     int exit_code;
 
     bool with_stop_starting;
     bool with_running_as_console_application;
     bool no_running_as_service;
-    bool no_retrieving_configuration;
+    bool no_retrieving_service_configuration;
 
     protected :
     starting_sequence starting;
@@ -110,9 +110,9 @@ class service_implementation
     bool processing_recoverable_error;
     bool error_ignored;
     bool exiting_abruptly;
-    std::deque<service_system_event> system_events;
+    std::deque<application_system_event> system_events;
 
-    application_controller * application;
+    event_loop_controller * event_loop;
     service_platform * service_platform;
     console_platform * console_platform;
 
@@ -128,37 +128,37 @@ class service_implementation
     void set_up_application_controller ();
     void shut_down_before_application_exits ();
 
-    void process_system_event_received (const service_system_event & event);
+    void process_system_event_received (const application_system_event & event);
 
     void set_up_service_platform ();
     void process_service_platform_started ();
-    void process_service_platform_failed_to_start (const service_error & error);
+    void process_service_platform_failed_to_start (const application_error & error);
     void process_service_platform_stopped ();
     void process_service_state_serving_set ();
-    void process_failed_to_set_service_state_serving (const service_error & error);
+    void process_failed_to_set_service_state_serving (const application_error & error);
     void process_service_state_stopping_set ();
     void process_service_state_stopped_set ();
-    void process_service_configuration_retrieved (const service_configuration & configuration);
-    void process_failed_to_retrieve_service_configuration (const service_error & error);
+    void process_service_configuration_retrieved (const struct service_configuration & configuration);
+    void process_failed_to_retrieve_service_configuration (const application_error & error);
 
     void set_up_console_platform ();
     void process_console_platform_started ();
-    void process_console_platform_failed_to_start (const service_error & error);
+    void process_console_platform_failed_to_start (const application_error & error);
     void process_console_platform_stopped ();
 
     template <class T> static std::vector<T *> plugins ();
 
     protected :
-    service * const this_;
-    friend class service;
+    application * const this_;
+    friend class application;
 };
 
-service::service (QObject * const parent)
+application::application (QObject * const parent)
     : QObject (parent),
-    this_ (new service_implementation (this))
+    this_ (new application_implementation (this))
 {}
 
-service_implementation::service_implementation (service * const service)
+application_implementation::application_implementation (application * const application)
     : state (
         { // c++20 designated initializers
             /*.state = */service_state::none,
@@ -166,34 +166,34 @@ service_implementation::service_implementation (service * const service)
         }
     ),
     running_as_service (std::nullopt),
-    configuration (std::nullopt),
+    service_configuration (std::nullopt),
     error (std::nullopt),
     error_ (std::nullopt),
     exit_code (0),
     with_stop_starting (false),
     with_running_as_console_application (false),
     no_running_as_service (false),
-    no_retrieving_configuration (false),
+    no_retrieving_service_configuration (false),
     starting (starting_sequence::none),
     stopping (stopping_sequence::none),
     proceeding (proceeding_state::none),
     control (control_state::none),
     regain_control (false),
-    application (nullptr),
+    event_loop (nullptr),
     service_platform (nullptr),
     console_platform (nullptr),
     exiting_abruptly (false),
     processing_recoverable_error (false),
     error_ignored (false),
-    this_ (service)
+    this_ (application)
 {}
 
-service::~service ()
+application::~application ()
 {
     assert (this_->state.stopped () || this_->state.none ());
 }
 
-void service::run ()
+void application::run ()
 {
     assert (this_->state.none ());
     if (! this_->state.none ())
@@ -202,7 +202,7 @@ void service::run ()
     this_->proceed_from_event_loop ();
 }
 
-void service::shut_down ()
+void application::shut_down ()
 {
     if (this_->state.stopped ())
         return;
@@ -212,7 +212,7 @@ void service::shut_down ()
     this_->proceed_from_event_loop ();
 }
 
-void service::set_started ()
+void application::set_started ()
 {
     // Allow before the signal was emitted?
     if (
@@ -225,7 +225,7 @@ void service::set_started ()
     this_->proceed_from_event_loop ();
 }
 
-void service::set_failed_to_start ()
+void application::set_failed_to_start ()
 {
     if (
         this_->starting != starting_sequence::start_serving_1
@@ -238,7 +238,7 @@ void service::set_failed_to_start ()
     this_->proceed_from_event_loop ();
 }
 
-void service::set_stopped ()
+void application::set_stopped ()
 {
     if (
         this_->stopping != stopping_sequence::stop_serving
@@ -249,49 +249,49 @@ void service::set_stopped ()
     this_->proceed_from_event_loop ();
 }
 
-void service::ignore_error ()
+void application::ignore_error ()
 {
     if (! this_->processing_recoverable_error)
         return;
     this_->error_ignored = true;
 }
 
-serving_state service::state () const
+serving_state application::state () const
 {
     return this_->state;
 }
 
-std::optional<bool> service::running_as_service () const
+std::optional<bool> application::running_as_service () const
 {
     return this_->running_as_service;
 }
 
-const std::optional<service_configuration> & service::configuration () const
+const std::optional<service_configuration> & application::service_configuration () const
 {
-    return this_->configuration;
+    return this_->service_configuration;
 }
 
-const std::optional<service_error> & service::error () const
+const std::optional<application_error> & application::error () const
 {
     return this_->error;
 }
 
-int service::exit_code () const
+int application::exit_code () const
 {
     return this_->exit_code;
 }
 
-void service::set_exit_code (const int exit_code)
+void application::set_exit_code (const int exit_code)
 {
     this_->exit_code = exit_code;
 }
 
-bool service::with_stop_starting () const
+bool application::with_stop_starting () const
 {
     return this_->with_stop_starting;
 }
 
-service & service::set_with_stop_starting ()
+application & application::set_with_stop_starting ()
 {
     assert (this_->state.none ());
     if (this_->state.none ())
@@ -299,12 +299,12 @@ service & service::set_with_stop_starting ()
     return * this;
 }
 
-bool service::with_running_as_console_application () const
+bool application::with_running_as_console_application () const
 {
     return this_->with_running_as_console_application;
 }
 
-service & service::set_with_running_as_console_application ()
+application & application::set_with_running_as_console_application ()
 {
     assert (this_->state.none ());
     if (this_->state.none ())
@@ -312,12 +312,12 @@ service & service::set_with_running_as_console_application ()
     return * this;
 }
 
-bool service::no_running_as_service () const
+bool application::no_running_as_service () const
 {
     return this_->no_running_as_service;
 }
 
-service & service::set_no_running_as_service ()
+application & application::set_no_running_as_service ()
 {
     assert (this_->state.none ());
     if (this_->state.none ())
@@ -325,20 +325,20 @@ service & service::set_no_running_as_service ()
     return * this;
 }
 
-bool service::no_retrieving_configuration () const
+bool application::no_retrieving_service_configuration () const
 {
-    return this_->no_retrieving_configuration;
+    return this_->no_retrieving_service_configuration;
 }
 
-service & service::set_no_retrieving_configuration ()
+application & application::set_no_retrieving_service_configuration ()
 {
     assert (this_->state.none ());
     if (this_->state.none ())
-        this_->no_retrieving_configuration = true;
+        this_->no_retrieving_service_configuration = true;
     return * this;
 }
 
-void service_implementation::proceed_from_event_loop ()
+void application_implementation::proceed_from_event_loop ()
 {
     switch (control)
     {
@@ -351,12 +351,12 @@ void service_implementation::proceed_from_event_loop ()
     control = control_state::queueing;
     QMetaObject::invokeMethod (
         this_,
-        std::bind (& service_implementation::proceed, this),
+        std::bind (& application_implementation::proceed, this),
         Qt::QueuedConnection
     );
 }
 
-void service_implementation::check_proceeding_and_lose_control ()
+void application_implementation::check_proceeding_and_lose_control ()
 {
     control = control_state::none;
     if (! regain_control)
@@ -369,7 +369,7 @@ void service_implementation::check_proceeding_and_lose_control ()
 // This is a critical section:
 // even where the user regains execution control, it won't enter more than once.
 // The handling priority is hardcoded.
-void service_implementation::proceed ()
+void application_implementation::proceed ()
 {
     control = control_state::processing;
     Q_FOREVER
@@ -429,7 +429,7 @@ void service_implementation::proceed ()
 // it is read from a single place and is perceived consequent.
 // The state controls what has already been done and
 // what to be done to achieve the target state in different scenarios.
-proceed_result service_implementation::proceed_starting ()
+proceed_result application_implementation::proceed_starting ()
 {
     switch (starting)
     {
@@ -486,7 +486,7 @@ proceed_result service_implementation::proceed_starting ()
 
             case proceeding_state::started :
             proceeding = proceeding_state::none;
-            starting = starting_sequence::retrieve_configuration;
+            starting = starting_sequence::retrieve_service_configuration;
             break;
 
             case proceeding_state::failed :
@@ -498,11 +498,11 @@ proceed_result service_implementation::proceed_starting ()
         }
         [[ fallthrough ]];
 
-        case starting_sequence::retrieve_configuration :
+        case starting_sequence::retrieve_service_configuration :
         switch (proceeding)
         {
             case proceeding_state::none :
-            if (no_retrieving_configuration)
+            if (no_retrieving_service_configuration)
             {
                 starting = starting_sequence::start_serving_1;
                 break;
@@ -535,7 +535,7 @@ proceed_result service_implementation::proceed_starting ()
             running_as_service = true;
             qCInfo (category, "Start serving.");
             proceeding = proceeding_state::starting;
-            if (! this_->isSignalConnected (QMetaMethod::fromSignal (& service::start)))
+            if (! this_->isSignalConnected (QMetaMethod::fromSignal (& application::start)))
                 return proceed_result::continue_;
             // Control is lost emitting a signal, but the sequence should proceed.
             // The user might reenter the event loop in the slot and not return control for a while,
@@ -543,7 +543,7 @@ proceed_result service_implementation::proceed_starting ()
             // The control will be returned through the public methods.
             {
                 check_proceeding_and_lose_control ();
-                const QPointer<const service> this_exists (this_);
+                const QPointer<const application> this_exists (this_);
                 Q_EMIT this_->start ();
                 if (this_exists.isNull ())
                     return proceed_result::destroyed;
@@ -631,11 +631,11 @@ proceed_result service_implementation::proceed_starting ()
             running_as_service = false;
             qCInfo (category, "Start serving as a console application.");
             proceeding = proceeding_state::starting;
-            if (! this_->isSignalConnected (QMetaMethod::fromSignal (& service::start)))
+            if (! this_->isSignalConnected (QMetaMethod::fromSignal (& application::start)))
                 return proceed_result::continue_;
             {
                 check_proceeding_and_lose_control ();
-                const QPointer<const service> this_exists (this_);
+                const QPointer<const application> this_exists (this_);
                 Q_EMIT this_->start ();
                 if (this_exists.isNull ())
                     return proceed_result::destroyed;
@@ -657,11 +657,11 @@ proceed_result service_implementation::proceed_starting ()
         state.target_state = target_service_state::none;
         qCInfo (category, "Serving...");
         starting = starting_sequence::done;
-        if (! this_->isSignalConnected (QMetaMethod::fromSignal (& service::state_changed)))
+        if (! this_->isSignalConnected (QMetaMethod::fromSignal (& application::state_changed)))
             return proceed_result::continue_;
         {
             check_proceeding_and_lose_control ();
-            const QPointer<const service> this_exists (this_);
+            const QPointer<const application> this_exists (this_);
             Q_EMIT this_->state_changed ();
             if (this_exists.isNull ())
                 return proceed_result::destroyed;
@@ -673,7 +673,7 @@ proceed_result service_implementation::proceed_starting ()
     }
 }
 
-proceed_result service_implementation::proceed_stopping ()
+proceed_result application_implementation::proceed_stopping ()
 {
     switch (stopping)
     {
@@ -728,7 +728,7 @@ proceed_result service_implementation::proceed_stopping ()
             stopping = stopping_sequence::set_service_state_stopping;
             break;
 
-            case starting_sequence::retrieve_configuration :
+            case starting_sequence::retrieve_service_configuration :
             switch (proceeding)
             {
                 case proceeding_state::starting : return proceed_result::nothing_to_do;
@@ -835,11 +835,11 @@ proceed_result service_implementation::proceed_stopping ()
             state.state = service_state::stopping;
             qCInfo (category, "Stop serving.");
             proceeding = proceeding_state::stopping;
-            if (! this_->isSignalConnected (QMetaMethod::fromSignal (& service::stop)))
+            if (! this_->isSignalConnected (QMetaMethod::fromSignal (& application::stop)))
                 return proceed_result::continue_;
             {
                 check_proceeding_and_lose_control ();
-                const QPointer<const service> this_exists (this_);
+                const QPointer<const application> this_exists (this_);
                 Q_EMIT this_->stop ();
                 if (this_exists.isNull ())
                     return proceed_result::destroyed;
@@ -922,7 +922,7 @@ proceed_result service_implementation::proceed_stopping ()
                 qCInfo (category, "Exit.");
             else
                 qCInfo (category, "Exit with the result: '%d'.", exit_code);
-            application->exit (exit_code);
+            event_loop->exit (exit_code);
         }
         stopping = stopping_sequence::set_state_stopped;
         [[ fallthrough ]];
@@ -933,10 +933,10 @@ proceed_result service_implementation::proceed_stopping ()
         qCInfo (category, "Stopped.");
         stopping = stopping_sequence::done;
         system_events.clear ();
-        if (! this_->isSignalConnected (QMetaMethod::fromSignal (& service::state_changed)))
+        if (! this_->isSignalConnected (QMetaMethod::fromSignal (& application::state_changed)))
             return proceed_result::nothing_to_do;
         {
-            const QPointer<const service> this_exists (this_);
+            const QPointer<const application> this_exists (this_);
             Q_EMIT this_->state_changed ();
             if (this_exists.isNull ())
                 return proceed_result::destroyed;
@@ -948,9 +948,9 @@ proceed_result service_implementation::proceed_stopping ()
     }
 }
 
-proceed_result service_implementation::process_error ()
+proceed_result application_implementation::process_error ()
 {
-    service_error value (std::move (error_.value ()));
+    application_error value (std::move (error_.value ()));
     error_ = std::nullopt;
 
     // Forward QMessageLogContext from the location where the error was created?
@@ -959,13 +959,13 @@ proceed_result service_implementation::process_error ()
     // Filter out the error if it is not of interest in the current state or is inappropriate.
     if (state.target_state != target_service_state::serving)
         return proceed_result::continue_;
-    const auto [ filtered, recoverable ] = [this] (const service_error & error)
+    const auto [ filtered, recoverable ] = [this] (const application_error & error)
     {
         struct result { bool filtered; bool recoverable; };
 
         switch (error.error)
         {
-            case service_error::not_system_service :
+            case application_error::not_service :
             switch (starting)
             {
                 case starting_sequence::set_up_service_platform :
@@ -974,20 +974,20 @@ proceed_result service_implementation::process_error ()
                 default : return result { true, false };
             }
 
-            case service_error::failed_to_retrieve_configuration :
+            case application_error::failed_to_retrieve_configuration :
             switch (starting)
             {
-                case starting_sequence::retrieve_configuration :
+                case starting_sequence::retrieve_service_configuration :
                 return result { false, true };
                 default : return result { true, false };
             }
 
-            case service_error::failed_to_run :
+            case application_error::failed_to_run :
             switch (starting)
             {
                 case starting_sequence::set_up_service_platform :
                 case starting_sequence::start_service_platform :
-                case starting_sequence::retrieve_configuration :
+                case starting_sequence::retrieve_service_configuration :
                 case starting_sequence::set_service_state_serving :
                 case starting_sequence::set_up_console_platform :
                 case starting_sequence::start_console_platform :
@@ -1003,11 +1003,11 @@ proceed_result service_implementation::process_error ()
     if (! filtered)
     {
         error = std::move (value);
-        if (this_->isSignalConnected (QMetaMethod::fromSignal (& service::failed)))
+        if (this_->isSignalConnected (QMetaMethod::fromSignal (& application::failed)))
         {
             error_ignored = false;
             processing_recoverable_error = recoverable; //&& error.value ().recoverable ();
-            const QPointer<const service> this_exists (this_);
+            const QPointer<const application> this_exists (this_);
             Q_EMIT this_->failed ();
             if (this_exists.isNull ())
                 return proceed_result::destroyed;
@@ -1026,44 +1026,44 @@ proceed_result service_implementation::process_error ()
 }
 
 // May add a user callback for flexibility.
-void service_implementation::process_system_event ()
+void application_implementation::process_system_event ()
 {
-    const service_system_event event (std::move (system_events.front ()));
+    const application_system_event event (std::move (system_events.front ()));
     system_events.pop_front ();
     switch (event.action)
     {
-        case service_system_event::stop :
+        case application_system_event::stop :
         state.target_state = target_service_state::stopped;
         qCInfo (category, "Stop on signal: '%s'.", qUtf8Printable (event.name));
         break;
     }
 }
 
-void service_implementation::set_up_application_controller ()
+void application_implementation::set_up_application_controller ()
 {
-    const auto plugins (service_implementation::plugins<application_controller_plugin> ());
-    application = [& plugins, this] ()
+    const auto plugins (application_implementation::plugins<event_loop_controller_plugin> ());
+    event_loop = [& plugins, this] ()
     {
         for (const auto & plugin : plugins)
         {
-            if (plugin->metaObject () != & background_application_controller_plugin_qt::staticMetaObject)
+            if (plugin->metaObject () != & background_event_loop_controller_plugin_qt::staticMetaObject)
             {
                 auto * const result (plugin->create (this_));
                 if (result != nullptr)
                     return result;
             }
         }
-        return static_cast<application_controller *> (new application_controller_qt (this_));
+        return static_cast<event_loop_controller *> (new event_loop_controller_qt (this_));
     } ();
     QObject::connect (
-        application, & application_controller::exiting,
-        this_, std::bind (& service_implementation::shut_down_before_application_exits, this)
+        event_loop, & event_loop_controller::exiting,
+        this_, std::bind (& application_implementation::shut_down_before_application_exits, this)
     );
 }
 
 // Do not prevent the user from exiting.
 // The platform implementation will hold the event loop if required.
-void service_implementation::shut_down_before_application_exits ()
+void application_implementation::shut_down_before_application_exits ()
 {
     if (state.state == service_state::stopped || stopping >= stopping_sequence::exit_application)
         return;
@@ -1078,7 +1078,7 @@ void service_implementation::shut_down_before_application_exits ()
     qCInfo (category, "The application exits unexpectedly.");
 }
 
-void service_implementation::process_system_event_received (const service_system_event & event)
+void application_implementation::process_system_event_received (const application_system_event & event)
 {
     if (state.state == service_state::stopped || stopping >= stopping_sequence::exit_application)
         return;
@@ -1086,12 +1086,12 @@ void service_implementation::process_system_event_received (const service_system
     proceed_from_event_loop ();
 }
 
-void service_implementation::set_up_service_platform ()
+void application_implementation::set_up_service_platform ()
 {
     const auto plugins (
         [] ()
         {
-            const auto plugins (service_implementation::plugins<service_platform_plugin> ());
+            const auto plugins (application_implementation::plugins<service_platform_plugin> ());
             std::multimap<unsigned int, service_platform_plugin *> result;
             for (auto * const plugin : plugins)
                 result.emplace (plugin->order (), plugin);
@@ -1113,9 +1113,9 @@ void service_implementation::set_up_service_platform ()
     if (service_platform == nullptr)
     {
         proceeding = proceeding_state::failed;
-        error_ = service_error
+        error_ = application_error
         { // c++20 designated initializers
-            /*.error =*/service_error::failed_to_run,
+            /*.error =*/application_error::failed_to_run,
             /*.text =*/QStringLiteral ("Failed to run as a service. There is no implementation suitable for the platform.")
         };
         return;
@@ -1123,57 +1123,57 @@ void service_implementation::set_up_service_platform ()
     if (! service_platform->check ())
     {
         proceeding = proceeding_state::failed;
-        error_ = service_error
+        error_ = application_error
         { // c++20 designated initializers
-            /*.error =*/service_error::not_system_service,
+            /*.error =*/application_error::not_service,
             /*.text =*/QStringLiteral ("Failed to run as a service. This process is not a service spawned by the system.")
         };
         return;
     }
     QObject::connect (
         service_platform, & service_platform::started,
-        this_, std::bind (& service_implementation::process_service_platform_started, this)
+        this_, std::bind (& application_implementation::process_service_platform_started, this)
     );
     QObject::connect (
         service_platform, & service_platform::failed_to_start,
-        this_, std::bind (& service_implementation::process_service_platform_failed_to_start, this, std::placeholders::_1)
+        this_, std::bind (& application_implementation::process_service_platform_failed_to_start, this, std::placeholders::_1)
     );
     QObject::connect (
         service_platform, & service_platform::stopped,
-        this_, std::bind (& service_implementation::process_service_platform_stopped, this)
+        this_, std::bind (& application_implementation::process_service_platform_stopped, this)
     );
     QObject::connect (
         service_platform, & service_platform::state_serving_set,
-        this_, std::bind (& service_implementation::process_service_state_serving_set, this)
+        this_, std::bind (& application_implementation::process_service_state_serving_set, this)
     );
     QObject::connect (
         service_platform, & service_platform::failed_to_set_state_serving,
-        this_, std::bind (& service_implementation::process_failed_to_set_service_state_serving, this, std::placeholders::_1)
+        this_, std::bind (& application_implementation::process_failed_to_set_service_state_serving, this, std::placeholders::_1)
     );
     QObject::connect (
         service_platform, & service_platform::state_stopping_set,
-        this_, std::bind (& service_implementation::process_service_state_stopping_set, this)
+        this_, std::bind (& application_implementation::process_service_state_stopping_set, this)
     );
     QObject::connect (
         service_platform, & service_platform::state_stopped_set,
-        this_, std::bind (& service_implementation::process_service_state_stopped_set, this)
+        this_, std::bind (& application_implementation::process_service_state_stopped_set, this)
     );
     QObject::connect (
         service_platform, & service_platform::configuration_retrieved,
-        this_, std::bind (& service_implementation::process_service_configuration_retrieved, this, std::placeholders::_1)
+        this_, std::bind (& application_implementation::process_service_configuration_retrieved, this, std::placeholders::_1)
     );
     QObject::connect (
         service_platform, & service_platform::failed_to_retrieve_configuration,
-        this_, std::bind (& service_implementation::process_failed_to_retrieve_service_configuration, this, std::placeholders::_1)
+        this_, std::bind (& application_implementation::process_failed_to_retrieve_service_configuration, this, std::placeholders::_1)
     );
     QObject::connect (
         service_platform, & service_platform::event_received,
-        this_, std::bind (& service_implementation::process_system_event_received, this, std::placeholders::_1)
+        this_, std::bind (& application_implementation::process_system_event_received, this, std::placeholders::_1)
     );
     proceeding = proceeding_state::started;
 }
 
-void service_implementation::process_service_platform_started ()
+void application_implementation::process_service_platform_started ()
 {
     if (starting != starting_sequence::start_service_platform || proceeding != proceeding_state::starting)
         return;
@@ -1181,7 +1181,7 @@ void service_implementation::process_service_platform_started ()
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_service_platform_failed_to_start (const service_error & error)
+void application_implementation::process_service_platform_failed_to_start (const application_error & error)
 {
     if (starting != starting_sequence::start_service_platform || proceeding != proceeding_state::starting)
         return;
@@ -1190,7 +1190,7 @@ void service_implementation::process_service_platform_failed_to_start (const ser
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_service_platform_stopped ()
+void application_implementation::process_service_platform_stopped ()
 {
     if (stopping != stopping_sequence::stop_service_platform || proceeding != proceeding_state::stopping)
         return;
@@ -1198,7 +1198,7 @@ void service_implementation::process_service_platform_stopped ()
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_service_state_serving_set ()
+void application_implementation::process_service_state_serving_set ()
 {
     if (starting != starting_sequence::set_service_state_serving || proceeding != proceeding_state::starting)
         return;
@@ -1206,7 +1206,7 @@ void service_implementation::process_service_state_serving_set ()
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_failed_to_set_service_state_serving (const service_error & error)
+void application_implementation::process_failed_to_set_service_state_serving (const application_error & error)
 {
     if (starting != starting_sequence::set_service_state_serving || proceeding != proceeding_state::starting)
         return;
@@ -1215,7 +1215,7 @@ void service_implementation::process_failed_to_set_service_state_serving (const 
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_service_state_stopping_set ()
+void application_implementation::process_service_state_stopping_set ()
 {
     if (stopping != stopping_sequence::set_service_state_stopping || proceeding != proceeding_state::stopping)
         return;
@@ -1223,7 +1223,7 @@ void service_implementation::process_service_state_stopping_set ()
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_service_state_stopped_set ()
+void application_implementation::process_service_state_stopped_set ()
 {
     if (stopping != stopping_sequence::set_service_state_stopped || proceeding != proceeding_state::stopping)
         return;
@@ -1231,30 +1231,30 @@ void service_implementation::process_service_state_stopped_set ()
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_service_configuration_retrieved (const service_configuration & configuration)
+void application_implementation::process_service_configuration_retrieved (const struct service_configuration & configuration)
 {
-    if (starting != starting_sequence::retrieve_configuration || proceeding != proceeding_state::starting)
+    if (starting != starting_sequence::retrieve_service_configuration || proceeding != proceeding_state::starting)
         return;
     proceeding = proceeding_state::started;
-    service_implementation::configuration = configuration;
+    service_configuration = configuration;
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_failed_to_retrieve_service_configuration (const service_error & error)
+void application_implementation::process_failed_to_retrieve_service_configuration (const application_error & error)
 {
-    if (starting != starting_sequence::retrieve_configuration || proceeding != proceeding_state::starting)
+    if (starting != starting_sequence::retrieve_service_configuration || proceeding != proceeding_state::starting)
         return;
     proceeding = proceeding_state::failed;
     error_ = error;
     proceed_from_event_loop ();
 }
 
-void service_implementation::set_up_console_platform ()
+void application_implementation::set_up_console_platform ()
 {
     const auto plugins (
         [] ()
         {
-            const auto plugins (service_implementation::plugins<console_platform_plugin> ());
+            const auto plugins (application_implementation::plugins<console_platform_plugin> ());
             std::multimap<unsigned int, console_platform_plugin *> result;
             for (auto * const plugin : plugins)
                 result.emplace (plugin->order (), plugin);
@@ -1274,33 +1274,33 @@ void service_implementation::set_up_console_platform ()
     if (console_platform == nullptr)
     {
         proceeding = proceeding_state::failed;
-        error_ = service_error
+        error_ = application_error
         { // c++20 designated initializers
-            /*.error =*/service_error::failed_to_run,
+            /*.error =*/application_error::failed_to_run,
             /*.text =*/QStringLiteral ("Failed to run as a console application. There is no implementation suitable for the platform.")
         };
         return;
     }
     QObject::connect (
         console_platform, & console_platform::started,
-        this_, std::bind (& service_implementation::process_console_platform_started, this)
+        this_, std::bind (& application_implementation::process_console_platform_started, this)
     );
     QObject::connect (
         console_platform, & console_platform::failed_to_start,
-        this_, std::bind (& service_implementation::process_console_platform_failed_to_start, this, std::placeholders::_1)
+        this_, std::bind (& application_implementation::process_console_platform_failed_to_start, this, std::placeholders::_1)
     );
     QObject::connect (
         console_platform, & console_platform::stopped,
-        this_, std::bind (& service_implementation::process_console_platform_stopped, this)
+        this_, std::bind (& application_implementation::process_console_platform_stopped, this)
     );
     QObject::connect (
         console_platform, & console_platform::event_received,
-        this_, std::bind (& service_implementation::process_system_event_received, this, std::placeholders::_1)
+        this_, std::bind (& application_implementation::process_system_event_received, this, std::placeholders::_1)
     );
     proceeding = proceeding_state::started;
 }
 
-void service_implementation::process_console_platform_started ()
+void application_implementation::process_console_platform_started ()
 {
     if (starting != starting_sequence::start_console_platform || proceeding != proceeding_state::starting)
         return;
@@ -1308,7 +1308,7 @@ void service_implementation::process_console_platform_started ()
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_console_platform_failed_to_start (const service_error & error)
+void application_implementation::process_console_platform_failed_to_start (const application_error & error)
 {
     if (starting != starting_sequence::start_console_platform || proceeding != proceeding_state::starting)
         return;
@@ -1317,7 +1317,7 @@ void service_implementation::process_console_platform_failed_to_start (const ser
     proceed_from_event_loop ();
 }
 
-void service_implementation::process_console_platform_stopped ()
+void application_implementation::process_console_platform_stopped ()
 {
     if (stopping != stopping_sequence::stop_console_platform || proceeding != proceeding_state::stopping)
         return;
@@ -1325,7 +1325,7 @@ void service_implementation::process_console_platform_stopped ()
     proceed_from_event_loop ();
 }
 
-template <class T> std::vector<T *> service_implementation::plugins ()
+template <class T> std::vector<T *> application_implementation::plugins ()
 {
     const auto interface_id (QString::fromUtf8 (qobject_interface_iid<T *> ()));
     std::vector<T *> result;

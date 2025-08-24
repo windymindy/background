@@ -8,13 +8,13 @@
 namespace background
 {
 
-class service_implementation;
+class application_implementation;
 
-class background_library service : public QObject
+class background_library application : public QObject
 {
     public :
-    explicit service (QObject * parent = nullptr);
-    ~service ();
+    explicit application (QObject * parent = nullptr);
+    ~application ();
 
     public Q_SLOTS :
     void run ();
@@ -39,28 +39,28 @@ class background_library service : public QObject
     serving_state state () const;
 
     std::optional<bool> running_as_service () const;
-    const std::optional<service_configuration> & configuration () const;
+    const std::optional<service_configuration> & service_configuration () const;
 
-    const std::optional<service_error> & error () const;
+    const std::optional<application_error> & error () const;
 
     int exit_code () const;
     void set_exit_code (int exit_code);
 
     public :
     bool with_stop_starting () const;
-    service & set_with_stop_starting ();
+    application & set_with_stop_starting ();
     bool with_running_as_console_application () const;
-    service & set_with_running_as_console_application ();
+    application & set_with_running_as_console_application ();
     bool no_running_as_service () const;
-    service & set_no_running_as_service ();
-    bool no_retrieving_configuration () const;
-    service & set_no_retrieving_configuration ();
+    application & set_no_running_as_service ();
+    bool no_retrieving_service_configuration () const;
+    application & set_no_retrieving_service_configuration ();
 
     private :
     Q_OBJECT
-    Q_DISABLE_COPY (service)
-    const QScopedPointer<service_implementation> this_;
-    friend class service_implementation;
+    Q_DISABLE_COPY (application)
+    const QScopedPointer<application_implementation> this_;
+    friend class application_implementation;
 };
 
 } // namespace background
