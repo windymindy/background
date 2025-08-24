@@ -24,11 +24,11 @@ target_sources (
     ${library} PUBLIC FILE_SET HEADERS
     BASE_DIRS ../sources/
     FILES
-    ${sources}/background_service.hpp
-    ${sources}/service
+    ${sources}/background_application.hpp
+    ${sources}/application
     ${sources}/background_datatypes.hpp
     ${sources}/background_datatypes_forward.hpp
-    ${sources}/background_application_controller.hpp
+    ${sources}/background_event_loop_controller.hpp
     ${sources}/background_service_platform.hpp
     ${sources}/background_console_platform.hpp
     ${sources}/background_library.hpp
@@ -37,24 +37,24 @@ target_sources (
     ${library} PRIVATE FILE_SET headers_private TYPE HEADERS
     BASE_DIRS ../sources/
     FILES
-    ${sources}/background_application_controller_qt.hpp
+    ${sources}/background_event_loop_controller_qt.hpp
 )
 target_sources (
     ${library} PRIVATE
-    ${sources}/background_service.cpp
-    ${sources}/background_application_controller_qt.cpp
+    ${sources}/background_application.cpp
+    ${sources}/background_event_loop_controller_qt.cpp
 )
 source_group (
     ${PROJECT_NAME}
     FILES
-    ${sources}/background_service.hpp
-    ${sources}/background_service.cpp
-    ${sources}/service
+    ${sources}/background_application.hpp
+    ${sources}/background_application.cpp
+    ${sources}/application
     ${sources}/background_datatypes.hpp
     ${sources}/background_datatypes_forward.hpp
-    ${sources}/background_application_controller.hpp
-    ${sources}/background_application_controller_qt.hpp
-    ${sources}/background_application_controller_qt.cpp
+    ${sources}/background_event_loop_controller.hpp
+    ${sources}/background_event_loop_controller_qt.hpp
+    ${sources}/background_event_loop_controller_qt.cpp
     ${sources}/background_service_platform.hpp
     ${sources}/background_console_platform.hpp
     ${sources}/background_library.hpp
