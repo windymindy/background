@@ -27,19 +27,19 @@ class background_library service_platform : public QObject
 
     Q_SIGNALS :
     void started ();
-    void failed_to_start (const service_error & error); // clazy:exclude=fully-qualified-moc-types
+    void failed_to_start (const application_error & error); // clazy:exclude=fully-qualified-moc-types
 
     void stopped ();
 
     void state_serving_set ();
-    void failed_to_set_state_serving (const service_error & error); // clazy:exclude=fully-qualified-moc-types
+    void failed_to_set_state_serving (const application_error & error); // clazy:exclude=fully-qualified-moc-types
     void state_stopping_set ();
     void state_stopped_set ();
 
     void configuration_retrieved (const service_configuration & configuration); // clazy:exclude=fully-qualified-moc-types
-    void failed_to_retrieve_configuration (const service_error & error); // clazy:exclude=fully-qualified-moc-types
+    void failed_to_retrieve_configuration (const application_error & error); // clazy:exclude=fully-qualified-moc-types
 
-    void event_received (const service_system_event & event); // clazy:exclude=fully-qualified-moc-types
+    void event_received (const application_system_event & event); // clazy:exclude=fully-qualified-moc-types
 
     private :
     Q_OBJECT

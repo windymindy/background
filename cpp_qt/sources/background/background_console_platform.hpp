@@ -19,11 +19,11 @@ class background_library console_platform : public QObject
 
     Q_SIGNALS :
     void started ();
-    void failed_to_start (const service_error & error); // clazy:exclude=fully-qualified-moc-types
+    void failed_to_start (const application_error & error); // clazy:exclude=fully-qualified-moc-types
 
     void stopped ();
 
-    void event_received (const service_system_event & event); // clazy:exclude=fully-qualified-moc-types
+    void event_received (const application_system_event & event); // clazy:exclude=fully-qualified-moc-types
 
     private :
     Q_OBJECT
