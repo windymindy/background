@@ -42,11 +42,11 @@ struct serving_state
     //friend bool operator == (serving_state, serving_state) = default;
 };
 
-struct service_error
+struct application_error
 {
     enum error
     {
-        not_system_service,
+        not_service,
         failed_to_retrieve_configuration,
         failed_to_run
     };
@@ -57,7 +57,7 @@ struct service_error
     bool recoverable () const;
 };
 
-struct service_system_event
+struct application_system_event
 {
     // Maybe extended with reload_configuration, pause or anything.
     enum action
@@ -99,11 +99,11 @@ inline bool operator != (const serving_state value_1, const serving_state value_
     return value_1.state != value_2.state or value_1.target_state != value_2.target_state;
 }
 
-inline bool service_error::recoverable () const
+inline bool application_error::recoverable () const
 {
     switch (error)
     {
-        case not_system_service :
+        case not_service :
         case failed_to_retrieve_configuration : return true;
         case failed_to_run :
         default : return false;

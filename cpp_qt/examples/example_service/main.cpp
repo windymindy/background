@@ -6,7 +6,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QTimer>
 
-#include <background/service>
+#include <background/application>
 //#include <background/service_controller>
 //#include <background/system_logger>
 
@@ -14,12 +14,12 @@ void set_up_service_logging ();
 
 int main (int argc, char * argv [])
 {
-    QCoreApplication application (argc, argv);
+    QCoreApplication application_ (argc, argv);
 
     // todo add installing, uninstalling and checking the service
     //  parse command line first and only then run
 
-    background::service service;
+    background::application application;
     QTimer timer_1;
     timer_1.setSingleShot (true);
     timer_1.setInterval (std::chrono::seconds (1));
@@ -27,18 +27,18 @@ int main (int argc, char * argv [])
     timer_1.setSingleShot (true);
     timer_1.setInterval (std::chrono::minutes (1));
     QObject::connect (
-        & service,
-        & background::service::start,
-        & service,
-        [& service, & timer_1] ()
+        & application,
+        & background::application::start,
+        & application,
+        [& application, & timer_1] ()
         {
-            if (service.running_as_service ().value ())
+            if (application.running_as_service ().value ())
             {
                 set_up_service_logging ();
 
                 // no_retrieving_configuration is false and there is no ignore_error () call,
                 // so the configuration value is guaranteed.
-                const auto & configuration (service.configuration ().value ());
+                const auto & configuration (application.service_configuration ().value ());
                 qInfo ().noquote () << QString (
                     "Running as a system service:\n"
                     "    name: '%1',\n"
@@ -52,31 +52,31 @@ int main (int argc, char * argv [])
 
             qInfo ("Time to spin up the example_service useful functionality. This will take some time...");
             QObject::connect (
-                & timer_1, & QTimer::timeout, & service,
-                [& service] ()
+                & timer_1, & QTimer::timeout, & application,
+                [& application] ()
                 {
                     // Simulate a failure.
                     if (QDateTime::currentDateTime ().time ().second () % 11 == 0)
                     {
                         qWarning ("Something went wrong.");
                         // todo system_logger::log ({ 111, error, "Example failure." });
-                        service.set_exit_code (111);
-                        service.set_failed_to_start ();
+                        application.set_exit_code (111);
+                        application.set_failed_to_start ();
                         return;
                     }
                     qInfo ("example_service has finished initializing.");
                     // The system will be notified shortly that the service is up and running.
-                    service.set_started ();
+                    application.set_started ();
                 }
             );
             timer_1.start ();
         }
     );
     QObject::connect (
-        & service,
-        & background::service::stop,
-        & service,
-        [& service, & timer_1] ()
+        & application,
+        & background::application::stop,
+        & application,
+        [& application, & timer_1] ()
         {
             //timer_2.stop ();
             timer_1.disconnect ();
@@ -88,54 +88,54 @@ int main (int argc, char * argv [])
             else
                 qInfo ("Time to stop. This will take some time...");
             QObject::connect (
-                & timer_1, & QTimer::timeout, & service,
-                [& service] ()
+                & timer_1, & QTimer::timeout, & application,
+                [& application] ()
                 {
                     qInfo ("example_service has finished stopping.");
-                    service.set_stopped ();
+                    application.set_stopped ();
                 }
             );
             timer_1.start ();
         }
     );
     QObject::connect (
-        & service,
-        & background::service::state_changed,
-        & service,
-        [& service, & timer_2] ()
+        & application,
+        & background::application::state_changed,
+        & application,
+        [& application, & timer_2] ()
         {
-            if (service.state ().serving ())
+            if (application.state ().serving ())
             {
                 qInfo ("example_service is up and running.");
                 QObject::connect (
-                    & timer_2, & QTimer::timeout, & service,
-                    [& service] ()
+                    & timer_2, & QTimer::timeout, & application,
+                    [& application] ()
                     {
                         qInfo ("All the workload has been processed. Let the service down now.");
-                        service.shut_down ();
+                        application.shut_down ();
                     }
                 );
                 timer_2.start ();
             }
-            else if (service.state ().stopped ())
+            else if (application.state ().stopped ())
                 qInfo ("example_service has shut down completely.");
         }
     );
     QObject::connect (
-        & service, & background::service::failed, & service,
-        [& service] ()
+        & application, & background::application::failed, & application,
+        [& application] ()
         {
-            const auto & error (service.error ().value ());
+            const auto & error (application.error ().value ());
             // todo qWarning ().noquote () << error.text;
             //if (error.recoverable ()) service.ignore_error ();
         }
     );
-    service
+    application
     .set_with_stop_starting ()
-    .set_with_running_as_console_application ()
+    .set_with_running_as_non_service ()
     .run ();
 
-    return application.exec ();
+    return application_.exec ();
 }
 
 void log (const QtMsgType type, const QMessageLogContext & context, const QString & message_)
@@ -150,15 +150,15 @@ void set_up_service_logging ()
 }
 
 // Providing blocking start and stop callbacks.
-class my_service : public background::service
+class my_application : public background::application
 {
 public :
-    my_service ()
-        : service ()
+    my_application ()
+        : application ()
     {
         connect (
             this,
-            & background::service::start,
+            & background::application::start,
             this,
             [this] ()
             {
@@ -170,7 +170,7 @@ public :
         );
         connect (
             this,
-            & background::service::stop,
+            & background::application::stop,
             this,
             [this] ()
             {
@@ -185,9 +185,9 @@ signals :
     void stop_blocking ();
 
 private :
-    using background::service::set_with_stop_starting;
+    using background::application::set_with_stop_starting;
 
 private :
     //Q_OBJECT
-    Q_DISABLE_COPY (my_service)
+    Q_DISABLE_COPY (my_application)
 };
