@@ -132,7 +132,7 @@ int main (int argc, char * argv [])
     );
     application
     .set_with_stop_starting ()
-    .set_with_running_as_console_application ()
+    .set_with_running_as_non_service ()
     .run ();
 
     return application_.exec ();

@@ -41,6 +41,8 @@ class background_library application : public QObject
     std::optional<bool> running_as_service () const;
     const std::optional<service_configuration> & service_configuration () const;
 
+    std::optional<bool> running_as_console_application () const;
+
     const std::optional<application_error> & error () const;
 
     int exit_code () const;
@@ -49,12 +51,14 @@ class background_library application : public QObject
     public :
     bool with_stop_starting () const;
     application & set_with_stop_starting ();
-    bool with_running_as_console_application () const;
-    application & set_with_running_as_console_application ();
-    bool no_running_as_service () const;
-    application & set_no_running_as_service ();
+    bool with_running_as_non_service () const;
+    application & set_with_running_as_non_service ();
     bool no_retrieving_service_configuration () const;
     application & set_no_retrieving_service_configuration ();
+    bool no_running_as_service () const;
+    application & set_no_running_as_service ();
+    bool no_running_as_console_application () const;
+    application & set_no_running_as_console_application ();
 
     private :
     Q_OBJECT

@@ -37,6 +37,8 @@ enum class starting_sequence
     start_console_platform,
     start_serving_2,
 
+    start_serving_3,
+
     set_state_serving,
     done
 };
@@ -92,14 +94,16 @@ class application_implementation
     serving_state state;
     std::optional<bool> running_as_service;
     std::optional<service_configuration> service_configuration;
+    std::optional<bool> running_as_console_application;
     std::optional<application_error> error;
     std::optional<application_error> error_;
     int exit_code;
 
     bool with_stop_starting;
-    bool with_running_as_console_application;
-    bool no_running_as_service;
+    bool with_running_as_non_service;
     bool no_retrieving_service_configuration;
+    bool no_running_as_service;
+    bool no_running_as_console_application;
 
     protected :
     starting_sequence starting;
@@ -167,13 +171,15 @@ application_implementation::application_implementation (application * const appl
     ),
     running_as_service (std::nullopt),
     service_configuration (std::nullopt),
+    running_as_console_application (std::nullopt),
     error (std::nullopt),
     error_ (std::nullopt),
     exit_code (0),
     with_stop_starting (false),
-    with_running_as_console_application (false),
-    no_running_as_service (false),
+    with_running_as_non_service (false),
     no_retrieving_service_configuration (false),
+    no_running_as_service (false),
+    no_running_as_console_application (false),
     starting (starting_sequence::none),
     stopping (stopping_sequence::none),
     proceeding (proceeding_state::none),
@@ -218,6 +224,7 @@ void application::set_started ()
     if (
         this_->starting != starting_sequence::start_serving_1
         && this_->starting != starting_sequence::start_serving_2
+        && this_->starting != starting_sequence::start_serving_3
         || this_->proceeding != proceeding_state::starting
     )
         return;
@@ -230,6 +237,7 @@ void application::set_failed_to_start ()
     if (
         this_->starting != starting_sequence::start_serving_1
         && this_->starting != starting_sequence::start_serving_2
+        && this_->starting != starting_sequence::start_serving_3
         || this_->proceeding != proceeding_state::starting
     )
         return;
@@ -271,6 +279,11 @@ const std::optional<service_configuration> & application::service_configuration 
     return this_->service_configuration;
 }
 
+std::optional<bool> application::running_as_console_application () const
+{
+    return this_->running_as_console_application;
+}
+
 const std::optional<application_error> & application::error () const
 {
     return this_->error;
@@ -299,16 +312,29 @@ application & application::set_with_stop_starting ()
     return * this;
 }
 
-bool application::with_running_as_console_application () const
+bool application::with_running_as_non_service () const
 {
-    return this_->with_running_as_console_application;
+    return this_->with_running_as_non_service;
 }
 
-application & application::set_with_running_as_console_application ()
+application & application::set_with_running_as_non_service ()
 {
     assert (this_->state.none ());
     if (this_->state.none ())
-        this_->with_running_as_console_application = true;
+        this_->with_running_as_non_service = true;
+    return * this;
+}
+
+bool application::no_retrieving_service_configuration () const
+{
+    return this_->no_retrieving_service_configuration;
+}
+
+application & application::set_no_retrieving_service_configuration ()
+{
+    assert (this_->state.none ());
+    if (this_->state.none ())
+        this_->no_retrieving_service_configuration = true;
     return * this;
 }
 
@@ -325,16 +351,16 @@ application & application::set_no_running_as_service ()
     return * this;
 }
 
-bool application::no_retrieving_service_configuration () const
+bool application::no_running_as_console_application () const
 {
-    return this_->no_retrieving_service_configuration;
+    return this_->no_running_as_console_application;
 }
 
-application & application::set_no_retrieving_service_configuration ()
+application & application::set_no_running_as_console_application ()
 {
     assert (this_->state.none ());
     if (this_->state.none ())
-        this_->no_retrieving_service_configuration = true;
+        this_->no_running_as_console_application = true;
     return * this;
 }
 
@@ -449,8 +475,10 @@ proceed_result application_implementation::proceed_starting ()
         set_up_application_controller ();
         if (! no_running_as_service)
             starting = starting_sequence::set_up_service_platform;
-        else
+        else if (! no_running_as_console_application)
             starting = starting_sequence::set_up_console_platform;
+        else
+            starting = starting_sequence::start_serving_3;
         return proceed_result::continue_;
 
         case starting_sequence::set_up_service_platform :
@@ -533,7 +561,8 @@ proceed_result application_implementation::proceed_starting ()
             case proceeding_state::none :
             state.state = service_state::starting;
             running_as_service = true;
-            qCInfo (category, "Start serving.");
+            running_as_console_application = false;
+            qCInfo (category, "Start serving as service.");
             proceeding = proceeding_state::starting;
             if (! this_->isSignalConnected (QMetaMethod::fromSignal (& application::start)))
                 return proceed_result::continue_;
@@ -629,7 +658,38 @@ proceed_result application_implementation::proceed_starting ()
             case proceeding_state::none :
             state.state = service_state::starting;
             running_as_service = false;
+            running_as_console_application = true;
             qCInfo (category, "Start serving as a console application.");
+            proceeding = proceeding_state::starting;
+            if (! this_->isSignalConnected (QMetaMethod::fromSignal (& application::start)))
+                return proceed_result::continue_;
+            {
+                check_proceeding_and_lose_control ();
+                const QPointer<const application> this_exists (this_);
+                Q_EMIT this_->start ();
+                if (this_exists.isNull ())
+                    return proceed_result::destroyed;
+            }
+            return proceed_result::lost_control;
+
+            case proceeding_state::starting : return proceed_result::nothing_to_do;
+
+            case proceeding_state::started :
+            proceeding = proceeding_state::none;
+            starting = starting_sequence::set_state_serving;
+            return proceed_result::continue_;
+
+            default : Q_UNREACHABLE (); return proceed_result::nothing_to_do;
+        }
+
+        case starting_sequence::start_serving_3 :
+        switch (proceeding)
+        {
+            case proceeding_state::none :
+            state.state = service_state::starting;
+            running_as_service = false;
+            running_as_console_application = false;
+            qCInfo (category, "Start serving.");
             proceeding = proceeding_state::starting;
             if (! this_->isSignalConnected (QMetaMethod::fromSignal (& application::start)))
                 return proceed_result::continue_;
@@ -687,6 +747,7 @@ proceed_result application_implementation::proceed_stopping ()
 
             case starting_sequence::start_serving_1 :
             case starting_sequence::start_serving_2 :
+            case starting_sequence::start_serving_3 :
             switch (proceeding)
             {
                 case proceeding_state::starting :
@@ -852,8 +913,10 @@ proceed_result application_implementation::proceed_stopping ()
             proceeding = proceeding_state::none;
             if (service_platform != nullptr)
                 stopping = stopping_sequence::set_service_state_stopped;
-            else
+            else if (console_platform != nullptr)
                 stopping = stopping_sequence::stop_console_platform;
+            else
+                stopping = stopping_sequence::exit_application;
             return proceed_result::continue_;
 
             default : Q_UNREACHABLE (); return proceed_result::nothing_to_do;
@@ -970,7 +1033,7 @@ proceed_result application_implementation::process_error ()
             {
                 case starting_sequence::set_up_service_platform :
                 case starting_sequence::start_service_platform :
-                return result { with_running_as_console_application, true };
+                return result { with_running_as_non_service, true };
                 default : return result { true, false };
             }
 

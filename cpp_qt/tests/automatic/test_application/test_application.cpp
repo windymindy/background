@@ -24,8 +24,8 @@ class test_application : public QObject
     void stop_not_emitted_until_set_started_2 ();
     void setting_with_stop_starting_stops_while_starting ();
 
-    void setting_with_running_as_console_application_disables_error_1 ();
-    void setting_with_running_as_console_application_disables_error_2 ();
+    void setting_with_running_as_non_service_disables_error_1 ();
+    void setting_with_running_as_non_service_disables_error_2 ();
     void ignoring_not_service_error_runs_as_console_application_1 ();
     void ignoring_not_service_error_runs_as_console_application_2 ();
 
@@ -33,6 +33,8 @@ class test_application : public QObject
 
     void setting_no_retrieving_configuration_skips_retrieving_configuration ();
     void ignoring_failed_to_retrieve_configuration_error_runs ();
+
+    void setting_no_running_as_console_application_runs ();
 
     void failing_to_start_platform_shuts_down_1 ();
     void failing_to_start_platform_shuts_down_2 ();
@@ -283,7 +285,7 @@ void test_application::setting_with_stop_starting_stops_while_starting ()
     QVERIFY (state_changed.wait ());
 }
 
-void test_application::setting_with_running_as_console_application_disables_error_1 ()
+void test_application::setting_with_running_as_non_service_disables_error_1 ()
 {
     event_loop_controller_test event_loop;
     service_platform_test service;
@@ -306,7 +308,7 @@ void test_application::setting_with_running_as_console_application_disables_erro
             console.send_stop ();
         }
     );
-    application.set_with_running_as_console_application ().run ();
+    application.set_with_running_as_non_service ().run ();
 
     connect (
         & service, & service_platform_test::check_,
@@ -318,11 +320,13 @@ void test_application::setting_with_running_as_console_application_disables_erro
     QVERIFY (application.running_as_service ().has_value ());
     QCOMPARE (application.running_as_service ().value (), false);
     QVERIFY (! application.service_configuration ().has_value ());
+    QVERIFY (application.running_as_console_application ().has_value ());
+    QCOMPARE (application.running_as_console_application ().value (), true);
     QCOMPARE (state_changed.changes, serving_state_changes::serving_to_stopped ());
     QVERIFY (failed.isEmpty ());
 }
 
-void test_application::setting_with_running_as_console_application_disables_error_2 ()
+void test_application::setting_with_running_as_non_service_disables_error_2 ()
 {
     event_loop_controller_test event_loop;
     service_platform_test service;
@@ -345,7 +349,7 @@ void test_application::setting_with_running_as_console_application_disables_erro
             console.send_stop ();
         }
     );
-    application.set_with_running_as_console_application ().run ();
+    application.set_with_running_as_non_service ().run ();
 
     connect (
         & service,
@@ -368,6 +372,8 @@ void test_application::setting_with_running_as_console_application_disables_erro
     QVERIFY (application.running_as_service ().has_value ());
     QCOMPARE (application.running_as_service ().value (), false);
     QVERIFY (! application.service_configuration ().has_value ());
+    QVERIFY (application.running_as_console_application ().has_value ());
+    QCOMPARE (application.running_as_console_application ().value (), true);
     QCOMPARE (state_changed.changes, serving_state_changes::serving_to_stopped ());
     QVERIFY (failed.isEmpty ());
 }
@@ -407,6 +413,8 @@ void test_application::ignoring_not_service_error_runs_as_console_application_1 
     QVERIFY (application.running_as_service ().has_value ());
     QCOMPARE (application.running_as_service ().value (), false);
     QVERIFY (! application.service_configuration ().has_value ());
+    QVERIFY (application.running_as_console_application ().has_value ());
+    QCOMPARE (application.running_as_console_application ().value (), true);
     QVERIFY (! application.error ().has_value ());
     QVERIFY (! failed.isEmpty ());
 
@@ -460,6 +468,8 @@ void test_application::ignoring_not_service_error_runs_as_console_application_2 
     QVERIFY (application.running_as_service ().has_value ());
     QCOMPARE (application.running_as_service ().value (), false);
     QVERIFY (! application.service_configuration ().has_value ());
+    QVERIFY (application.running_as_console_application ().has_value ());
+    QCOMPARE (application.running_as_console_application ().value (), true);
     QVERIFY (! application.error ().has_value ());
     QVERIFY (! failed.isEmpty ());
 
@@ -486,6 +496,8 @@ void test_application::setting_no_running_as_service_runs_as_console_application
     QVERIFY (application.running_as_service ().has_value ());
     QCOMPARE (application.running_as_service ().value (), false);
     QVERIFY (! application.service_configuration ().has_value ());
+    QVERIFY (application.running_as_console_application ().has_value ());
+    QCOMPARE (application.running_as_console_application ().value (), true);
     QVERIFY (! application.error ().has_value ());
     QVERIFY (failed.isEmpty ());
 
@@ -578,6 +590,39 @@ void test_application::ignoring_failed_to_retrieve_configuration_error_runs ()
     QVERIFY (! application.service_configuration ().has_value ());
     QCOMPARE (state_changed.changes, serving_state_changes::serving_to_stopped ());
     QVERIFY (! failed.isEmpty ());
+}
+
+void test_application::setting_no_running_as_console_application_runs ()
+{
+    event_loop_controller_test event_loop;
+    service_platform_test service;
+    console_platform_test console;
+    application application;
+    QSignalSpy start (& application, & application::start);
+    serving_state_changes state_changed (& application);
+    QSignalSpy failed (& application, & application::failed);
+
+    connect (& application, & application::start, & application, & application::set_started);
+    connect (& application, & application::stop, & application, & application::set_stopped);
+    connect (& application, & application::start, & application, & application::shut_down);
+    application.set_no_running_as_service ().set_no_running_as_console_application ().run ();
+
+    QVERIFY (start.wait ());
+    QVERIFY (application.running_as_service ().has_value ());
+    QCOMPARE (application.running_as_service ().value (), false);
+    QVERIFY (! application.service_configuration ().has_value ());
+    QVERIFY (application.running_as_console_application ().has_value ());
+    QCOMPARE (application.running_as_console_application ().value (), false);
+    QVERIFY (! application.error ().has_value ());
+    QVERIFY (failed.isEmpty ());
+
+    state_changed.wait (service_state::stopped);
+    QCOMPARE (state_changed.changes, serving_state_changes::none_to_stopped ());
+    QVERIFY (service.checked.isEmpty ());
+    QVERIFY (service.started_.isEmpty ());
+    QVERIFY (service.stopped_.isEmpty ());
+    QVERIFY (console.started_.isEmpty ());
+    QVERIFY (console.stopped_.isEmpty ());
 }
 
 void test_application::failing_to_start_platform_shuts_down_1 ()
