@@ -1,19 +1,18 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCommandLineParser>
-#include <QtCore/QFile>
-#include <QtCore/QDir>
-#include <QtCore/QDebug>
 #include <QtCore/QDateTime>
 #include <QtCore/QTimer>
+#include <QtCore/QDebug>
 
 #include <background/application>
 //#include <background/service_controller>
 //#include <background/system_logger>
 
-void set_up_service_logging ();
+#include "logger.hpp"
 
 int main (int argc, char * argv [])
 {
+    logger logger;
     QCoreApplication application_ (argc, argv);
 
     // todo add installing, uninstalling and checking the service
@@ -28,11 +27,11 @@ int main (int argc, char * argv [])
     timer_2.setInterval (std::chrono::minutes (1));
     QObject::connect (
         & application, & background::application::start, & application,
-        [& application, & timer_1] ()
+        [& application, & logger, & timer_1] ()
         {
             if (application.running_as_service ().value ())
             {
-                set_up_service_logging ();
+                logger.set_up_logging_to_file ();
 
                 // 'no_retrieving_configuration' is false and there is no 'ignore_error ()' call,
                 // so the configuration value is guaranteed.
@@ -46,7 +45,11 @@ int main (int argc, char * argv [])
                 ).arg (configuration.name, configuration.description, configuration.executable, configuration.user);
             }
             else // Alternatively, consider running not as a service an error. Print usage on 'failed ()' and quit.
+            {
+                logger.set_back_to_logging_to_console ();
+
                 qInfo ("Running as a regular program.");
+            }
 
             qInfo ("Time to spin up the example_service useful functionality. This will take some time...");
             QObject::connect (
@@ -80,7 +83,7 @@ int main (int argc, char * argv [])
             if (timer_1.isActive ())
             {
                 timer_1.stop ();
-                qInfo ("Time to stop, though the example_service has not initialized yet. This will take some time...");
+                qInfo ("Time to stop, though example_service has not initialized yet. This will take some time...");
             }
             else
                 qInfo ("Time to stop. This will take some time...");
@@ -123,7 +126,7 @@ int main (int argc, char * argv [])
         [& application] ()
         {
             const auto & error (application.error ().value ());
-            // todo qWarning ().noquote () << error.text;
+            //qWarning ().noquote () << error.text;
             //if (error.recoverable ()) application.ignore_error ();
         }
     );
@@ -134,53 +137,3 @@ int main (int argc, char * argv [])
 
     return application_.exec ();
 }
-
-void log (const QtMsgType type, const QMessageLogContext & context, const QString & message_)
-{
-    // todo
-}
-
-void set_up_service_logging ()
-{
-    // todo
-    qInstallMessageHandler (& log);
-}
-
-// Providing blocking start and stop callbacks.
-class my_application : public background::application
-{
-public :
-    my_application ()
-        : application ()
-    {
-        connect (
-            this, & background::application::start, this,
-            [this] ()
-            {
-                if (Q_EMIT start_blocking ())
-                    set_started ();
-                else
-                    set_failed_to_start ();
-            }
-        );
-        connect (
-            this, & background::application::stop, this,
-            [this] ()
-            {
-                Q_EMIT stop_blocking ();
-                set_stopped ();
-            }
-        );
-    }
-
-signals :
-    bool start_blocking ();
-    void stop_blocking ();
-
-private :
-    using background::application::set_with_stop_starting;
-
-private :
-    //Q_OBJECT
-    Q_DISABLE_COPY (my_application)
-};
