@@ -59,7 +59,7 @@ void logger::set_up_logging_to_file ()
     if (not file_->open (QIODevice::WriteOnly bitor QIODevice::Append))
     {
         qWarning (
-            "Failed to open log file '%s': %s",
+            "Failed to open the log file '%s': %s",
             qUtf8Printable (file_->fileName ()),
             qUtf8Printable (file_->errorString ())
         );

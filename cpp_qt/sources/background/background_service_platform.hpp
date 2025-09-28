@@ -21,7 +21,7 @@ class background_library service_platform : public QObject
 
     virtual void set_state_serving () = 0;
     virtual void set_state_stopping () = 0;
-    virtual void set_state_stopped () = 0;
+    virtual void set_state_stopped (int exit_code) = 0;
 
     virtual void retrieve_configuration () = 0;
 
