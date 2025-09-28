@@ -69,6 +69,14 @@ struct application_system_event
     QString name;
 };
 
+namespace text
+{
+
+QString with_last_error (const QString & value);
+QString with_last_error (const QString & value_1, const QString & value_2);
+
+} // namespace text
+
 } // namespace background
 
 namespace background
@@ -108,6 +116,22 @@ inline bool application_error::recoverable () const
         case failed_to_run :
         default : return false;
     }
+}
+
+inline QString text::with_last_error (const QString & value)
+{
+    return with_last_error (value, qt_error_string ());
+}
+
+inline QString text::with_last_error (const QString & value_1, const QString & value_2)
+{
+    QString result;
+    result.reserve (value_1.size () + value_2.size () + 3);
+    result.append (std::move (value_1)).append (QStringLiteral (": ")).append (value_2);
+    if (result.endsWith ('.'))
+        return result;
+    result.append ('.');
+    return result;
 }
 
 } // namespace background

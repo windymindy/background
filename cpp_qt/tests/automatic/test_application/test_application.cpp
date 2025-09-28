@@ -100,7 +100,7 @@ class service_platform_test : public service_platform
 
     void set_state_serving () override;
     void set_state_stopping () override;
-    void set_state_stopped () override;
+    void set_state_stopped (int exit_code) override;
 
     void retrieve_configuration () override;
 
@@ -112,7 +112,7 @@ class service_platform_test : public service_platform
 
     void set_state_serving_ ();
     void set_state_stopping_ ();
-    void set_state_stopped_ ();
+    void set_state_stopped_ (int exit_code);
 
     void retrieve_configuration_ ();
 
@@ -1136,9 +1136,9 @@ void service_platform_test::set_state_stopping ()
         Q_EMIT state_stopping_set ();
 }
 
-void service_platform_test::set_state_stopped ()
+void service_platform_test::set_state_stopped (const int exit_code)
 {
-    Q_EMIT set_state_stopped_ ();
+    Q_EMIT set_state_stopped_ (exit_code);
     if (not signal_utility::connected (this, state_stopped_set_))
         Q_EMIT state_stopped_set ();
 }

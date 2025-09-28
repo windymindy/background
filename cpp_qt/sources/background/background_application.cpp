@@ -7,6 +7,7 @@
 #include <cassert>
 
 #include <QtCore/QPointer>
+#include <QtCore/QAtomicPointer>
 #include <QtCore/QMetaMethod>
 #include <QtCore/QPluginLoader>
 #include <QtCore/QLoggingCategory>
@@ -153,9 +154,14 @@ class application_implementation
     template <class T> static std::vector<T *> plugins ();
 
     protected :
+    static QBasicAtomicPointer<application_implementation> instance;
+
+    protected :
     application * const this_;
     friend class application;
 };
+
+QBasicAtomicPointer<application_implementation> application_implementation::instance (nullptr);
 
 application::application (QObject * const parent)
     : QObject (parent),
@@ -460,6 +466,21 @@ proceed_result application_implementation::proceed_starting ()
     switch (starting)
     {
         case starting_sequence::none :
+        // This is to be checked early.
+        // Platform implementations manage the entire process.
+        // 'application' guarantees to not reenter platform implementations,
+        // so they may not repeat handling this error and focus on interoperating with the operating system.
+        if (not instance.testAndSetRelaxed (nullptr, this))
+        {
+            // Could emit 'failed ()' with a proper error or log a warning. Could quit or abort.
+            // But I don't want to introduce any definitive behavior to handling interface violations.
+            // A program that has multiple 'application' instances shall be considered malformed, as documented.
+            assert (false);
+            state.state = service_state::stopped;
+            state.target_state = target_service_state::none;
+            stopping = stopping_sequence::done;
+            return proceed_result::nothing_to_do;
+        }
         // Logging is losing control.
         // Anything might happen inside a handler set with 'qInstallMessageHandler ()'.
         // The target state might change. This instance might even get destroyed.
@@ -927,7 +948,7 @@ proceed_result application_implementation::proceed_stopping ()
         {
             case proceeding_state::none :
             proceeding = proceeding_state::stopping;
-            service_platform->set_state_stopped ();
+            service_platform->set_state_stopped (exit_code);
             return proceed_result::continue_;
 
             case proceeding_state::stopping : return proceed_result::nothing_to_do;
@@ -996,6 +1017,7 @@ proceed_result application_implementation::proceed_stopping ()
         qCInfo (category, "Stopped.");
         stopping = stopping_sequence::done;
         system_events.clear ();
+        instance.testAndSetRelaxed (this, nullptr);
         if (not this_->isSignalConnected (QMetaMethod::fromSignal (& application::state_changed)))
             return proceed_result::nothing_to_do;
         {

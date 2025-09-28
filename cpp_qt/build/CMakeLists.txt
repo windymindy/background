@@ -44,6 +44,21 @@ target_sources (
     ${sources}/background_application.cpp
     ${sources}/background_event_loop_controller_qt.cpp
 )
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    target_sources (
+        ${library} PRIVATE FILE_SET headers_private TYPE HEADERS
+        BASE_DIRS ../sources/
+        FILES
+        ${sources}/background_service_platform_windows.hpp
+        ${sources}/background_console_platform_windows.hpp
+    )
+    target_sources (
+        ${library} PRIVATE
+        ${sources}/background_service_platform_windows.cpp
+        ${sources}/background_console_platform_windows.cpp
+    )
+endif ()
 source_group (
     ${PROJECT_NAME}
     FILES
@@ -56,7 +71,11 @@ source_group (
     ${sources}/background_event_loop_controller_qt.hpp
     ${sources}/background_event_loop_controller_qt.cpp
     ${sources}/background_service_platform.hpp
+    ${sources}/background_service_platform_windows.hpp
+    ${sources}/background_service_platform_windows.cpp
     ${sources}/background_console_platform.hpp
+    ${sources}/background_console_platform_windows.hpp
+    ${sources}/background_console_platform_windows.cpp
     ${sources}/background_library.hpp
 )
 
